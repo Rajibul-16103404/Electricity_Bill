@@ -5,7 +5,7 @@ namespace App\Http\Requests;
 use Illuminate\Contracts\Validation\ValidationRule;
 use Illuminate\Foundation\Http\FormRequest;
 
-class StoreConsumerIdRequest extends FormRequest
+class LoginRequest extends FormRequest
 {
     /**
      * Determine if the user is authorized to make this request.
@@ -23,7 +23,7 @@ class StoreConsumerIdRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'consumer_id' => ['required', 'string', 'max:8', 'unique:consumer_ids,consumer_id'],
+            'consumer_id' => ['required', 'string', 'max:8'],
         ];
     }
 }

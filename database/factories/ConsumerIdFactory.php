@@ -18,7 +18,7 @@ class ConsumerIdFactory extends Factory
     public function definition(): array
     {
         return [
-            'consumer_id' => $this->faker->unique()->numerify('##########'),
+            'consumer_id' => $this->faker->unique()->numerify('########'),
         ];
     }
 }
