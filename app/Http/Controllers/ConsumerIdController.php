@@ -5,8 +5,14 @@ namespace App\Http\Controllers;
 use App\Http\Requests\CheckTokenRequest;
 use App\Http\Requests\LoginRequest;
 use App\Http\Requests\StoreConsumerIdRequest;
+use App\Http\Requests\StoreDailyReportRequest;
 use App\Http\Resources\ConsumerIdResource;
+use App\Http\Resources\DailyReportResource;
+use App\Http\Resources\MonthlyUsageResource;
+use App\Http\Resources\RechargeResource;
 use App\Models\ConsumerId;
+use App\Models\DailyReport;
+use App\Services\DailyReportService;
 use App\Services\NescoScraperService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
@@ -40,7 +46,7 @@ class ConsumerIdController extends Controller
         // Attempt to scrape details from NESCO
         $this->scraperService->scrapeAndSync($consumerId);
 
-        return new ConsumerIdResource($consumerId->load('recharges'));
+        return new ConsumerIdResource($consumerId);
     }
 
     /**
@@ -48,7 +54,7 @@ class ConsumerIdController extends Controller
      */
     public function show(ConsumerId $consumerId): ConsumerIdResource
     {
-        return new ConsumerIdResource($consumerId->load('recharges'));
+        return new ConsumerIdResource($consumerId);
     }
 
     /**
@@ -77,7 +83,7 @@ class ConsumerIdController extends Controller
 
         return response()->json([
             'token' => $token,
-            'consumer' => new ConsumerIdResource($consumerId->load('recharges')),
+            'consumer' => new ConsumerIdResource($consumerId),
         ]);
     }
 
@@ -88,7 +94,7 @@ class ConsumerIdController extends Controller
     {
         $this->scraperService->scrapeAndSync($consumerId);
 
-        return new ConsumerIdResource($consumerId->load('recharges'));
+        return new ConsumerIdResource($consumerId);
     }
 
     /**
@@ -131,5 +137,49 @@ class ConsumerIdController extends Controller
             'message' => 'Token is valid.',
             'expires_at' => $accessToken->expires_at ? $accessToken->expires_at->toIso8601String() : null,
         ]);
+    }
+
+    /**
+     * Display a listing of recharges for the specified consumer.
+     */
+    public function recharges(ConsumerId $consumerId): AnonymousResourceCollection
+    {
+        return RechargeResource::collection($consumerId->recharges()->orderBy('id', 'asc')->get());
+    }
+
+    /**
+     * Display a listing of monthly usages for the specified consumer.
+     */
+    public function monthlyUsages(ConsumerId $consumerId): AnonymousResourceCollection
+    {
+        return MonthlyUsageResource::collection($consumerId->monthlyUsages()->orderBy('id', 'asc')->get());
+    }
+
+    /**
+     * Display a listing of daily reports for the specified consumer.
+     */
+    public function dailyReports(ConsumerId $consumerId): AnonymousResourceCollection
+    {
+        return DailyReportResource::collection($consumerId->dailyReports()->orderBy('date', 'desc')->get());
+    }
+
+    /**
+     * Store a manually entered daily report for the specified consumer.
+     */
+    public function storeDailyReport(StoreDailyReportRequest $request, ConsumerId $consumerId): DailyReportResource
+    {
+        $dailyReport = DailyReport::updateOrCreate(
+            [
+                'consumer_id_id' => $consumerId->id,
+                'date' => $request->validated('date'),
+            ],
+            [
+                'remaining_balance' => $request->validated('remaining_balance'),
+            ]
+        );
+
+        app(DailyReportService::class)->recalculateAll($consumerId);
+
+        return new DailyReportResource($dailyReport->refresh());
     }
 }

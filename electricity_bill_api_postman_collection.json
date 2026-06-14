@@ -1,0 +1,405 @@
+{
+	"info": {
+		"_postman_id": "b1a134bf-4279-4d69-b590-7d727b14d8ad",
+		"name": "Electricity Bill API",
+		"description": "API collection for NESCO Electricity Bill Scraper, Daily Reports calculation, and Token verification.",
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+	},
+	"item": [
+		{
+			"name": "Auth",
+			"item": [
+				{
+					"name": "Login",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json",
+								"type": "text"
+							},
+							{
+								"key": "Accept",
+								"value": "application/json",
+								"type": "text"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"consumer_id\": \"32900675\"\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{base_url}}/api/login",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"login"
+							]
+						},
+						"description": "Authenticates or registers a consumer ID, runs NESCO scrape, and returns a Sanctum auth token with consumer details."
+					},
+					"response": []
+				},
+				{
+					"name": "Check Token",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json",
+								"type": "text"
+							},
+							{
+								"key": "Accept",
+								"value": "application/json",
+								"type": "text"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"token\": \"{{token}}\"\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{base_url}}/api/check-token",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"check-token"
+							]
+						},
+						"description": "Verifies whether a Sanctum API token is valid or expired. Can accept token via payload or Authorization bearer header."
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "Authenticated Routes",
+			"item": [
+				{
+					"name": "List Consumers",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Accept",
+								"value": "application/json",
+								"type": "text"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/api/consumer-ids",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"consumer-ids"
+							]
+						},
+						"description": "List all registered consumer IDs in the system."
+					},
+					"response": []
+				},
+				{
+					"name": "Create Consumer",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json",
+								"type": "text"
+							},
+							{
+								"key": "Accept",
+								"value": "application/json",
+								"type": "text"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"consumer_id\": \"32073010\"\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{base_url}}/api/consumer-ids",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"consumer-ids"
+							]
+						},
+						"description": "Register a new consumer ID and trigger the scraper to fetch details from NESCO."
+					},
+					"response": []
+				},
+				{
+					"name": "Show Consumer",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Accept",
+								"value": "application/json",
+								"type": "text"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/api/consumer-ids/32900675",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"consumer-ids",
+								"32900675"
+							]
+						},
+						"description": "Retrieve specific consumer information along with its nested recharges, monthly usages, and daily reports."
+					},
+					"response": []
+				},
+				{
+					"name": "Sync Consumer Data",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Accept",
+								"value": "application/json",
+								"type": "text"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/api/consumer-ids/32900675/sync",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"consumer-ids",
+								"32900675",
+								"sync"
+							]
+						},
+						"description": "Force a manual data scrape and sync from NESCO for the specified consumer ID."
+					},
+					"response": []
+				},
+				{
+					"name": "Delete Consumer",
+					"request": {
+						"method": "DELETE",
+						"header": [
+							{
+								"key": "Accept",
+								"value": "application/json",
+								"type": "text"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/api/consumer-ids/32073010",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"consumer-ids",
+								"32073010"
+							]
+						},
+						"description": "Deletes a consumer ID from the database."
+					},
+					"response": []
+				},
+				{
+					"name": "List Recharges",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Accept",
+								"value": "application/json",
+								"type": "text"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/api/consumer-ids/32900675/recharges",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"consumer-ids",
+								"32900675",
+								"recharges"
+							]
+						},
+						"description": "Retrieve recharge history list for a consumer, sorted stably by ID."
+					},
+					"response": []
+				},
+				{
+					"name": "List Monthly Usages",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Accept",
+								"value": "application/json",
+								"type": "text"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/api/consumer-ids/32900675/monthly-usages",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"consumer-ids",
+								"32900675",
+								"monthly-usages"
+							]
+						},
+						"description": "Retrieve monthly usages list for a consumer, sorted stably by ID."
+					},
+					"response": []
+				},
+				{
+					"name": "List Daily Reports",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Accept",
+								"value": "application/json",
+								"type": "text"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/api/consumer-ids/32900675/daily-reports",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"consumer-ids",
+								"32900675",
+								"daily-reports"
+							]
+						},
+						"description": "Retrieve the calculated daily snapshots list for a consumer, sorted by date descending."
+					},
+					"response": []
+				},
+				{
+					"name": "Store Daily Report Manually",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json",
+								"type": "text"
+							},
+							{
+								"key": "Accept",
+								"value": "application/json",
+								"type": "text"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"date\": \"2026-06-13\",\n    \"remaining_balance\": 390.68\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{base_url}}/api/consumer-ids/32900675/daily-reports",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"consumer-ids",
+								"32900675",
+								"daily-reports"
+							]
+						},
+						"description": "Manually records or overwrites a daily balance snapshot for a specific date and recalculates usages."
+					},
+					"response": []
+				}
+			],
+			"auth": {
+				"type": "bearer",
+				"bearer": [
+					{
+						"key": "token",
+						"value": "{{token}}",
+						"type": "string"
+					}
+				]
+			},
+			"event": [
+				{
+					"listen": "prerequest",
+					"script": {
+						"type": "text/javascript",
+						"exec": [
+							""
+						]
+					}
+				},
+				{
+					"listen": "test",
+					"script": {
+						"type": "text/javascript",
+						"exec": [
+							""
+						]
+					}
+				}
+			]
+		}
+	],
+	"variable": [
+		{
+			"key": "base_url",
+			"value": "http://localhost:8000",
+			"type": "string"
+		},
+		{
+			"key": "token",
+			"value": "YOUR_SANCTUM_TOKEN_HERE",
+			"type": "string"
+		}
+	]
+}

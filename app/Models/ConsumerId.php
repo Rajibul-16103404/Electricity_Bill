@@ -13,6 +13,7 @@ use Laravel\Sanctum\HasApiTokens;
 #[Fillable([
     'consumer_id',
     'customer_name',
+    'father_husband_name',
     'address',
     'mobile',
     'billing_office',
@@ -24,6 +25,8 @@ use Laravel\Sanctum\HasApiTokens;
     'meter_status',
     'installation_date',
     'min_recharge',
+    'remaining_balance',
+    'balance_updated_at',
 ])]
 class ConsumerId extends Authenticatable
 {
@@ -37,7 +40,27 @@ class ConsumerId extends Authenticatable
      */
     public function recharges(): HasMany
     {
-        return $this->hasMany(Recharge::class, 'consumer_id_id');
+        return $this->hasMany(Recharge::class, 'consumer_id_id')->orderBy('id', 'asc');
+    }
+
+    /**
+     * Get the monthly usage history for the consumer.
+     *
+     * @return HasMany<MonthlyUsage>
+     */
+    public function monthlyUsages(): HasMany
+    {
+        return $this->hasMany(MonthlyUsage::class, 'consumer_id_id')->orderBy('id', 'asc');
+    }
+
+    /**
+     * Get the daily reports for the consumer.
+     *
+     * @return HasMany<DailyReport>
+     */
+    public function dailyReports(): HasMany
+    {
+        return $this->hasMany(DailyReport::class, 'consumer_id_id');
     }
 
     /**

@@ -1,6 +1,9 @@
 <?php
 
 use App\Models\ConsumerId;
+use App\Models\DailyReport;
+use App\Models\MonthlyUsage;
+use App\Models\Recharge;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
 use Illuminate\Support\Facades\Http;
 use Laravel\Sanctum\Sanctum;
@@ -9,11 +12,15 @@ uses(LazilyRefreshDatabase::class);
 
 test('can login with a new consumer id and scrape data', function () {
     $responseHtml = file_get_contents(base_path('nesco_response.html'));
+    $consumptionHtml = '<html><tbody class="font_bill_summ"><tr><td>2026</td><td>May</td><td>699</td><td>-2.52</td><td>212.06</td><td>160</td><td>336</td><td>0</td><td>0</td><td>33.29</td><td>741.35</td><td>256.2</td><td>45.8</td></tr></tbody></html>';
 
     Http::fake([
-        'https://customer.nesco.gov.bd/*' => function ($request) use ($responseHtml) {
+        'https://customer.nesco.gov.bd/*' => function ($request) use ($responseHtml, $consumptionHtml) {
             if ($request->method() === 'GET') {
                 return Http::response('<meta name="csrf-token" content="mock-token">', 200);
+            }
+            if ($request->method() === 'POST' && ($request->data()['submit'] ?? '') === 'মাসিক ব্যবহার') {
+                return Http::response($consumptionHtml, 200);
             }
 
             return Http::response($responseHtml, 200);
@@ -33,6 +40,7 @@ test('can login with a new consumer id and scrape data', function () {
                 'id',
                 'consumer_id',
                 'customer_name',
+                'father_husband_name',
                 'address',
                 'mobile',
                 'billing_office',
@@ -44,26 +52,8 @@ test('can login with a new consumer id and scrape data', function () {
                 'meter_status',
                 'installation_date',
                 'min_recharge',
-                'recharges' => [
-                    '*' => [
-                        'id',
-                        'order_no',
-                        'token',
-                        'seq',
-                        'rent',
-                        'demand_charge',
-                        'pfc',
-                        'tax',
-                        'subsidy_amount',
-                        'purchase_amount',
-                        'total_amount',
-                        'purchase_energy',
-                        'sale_name',
-                        'purchase_date',
-                        'debt_amount',
-                        'paid_amount',
-                    ],
-                ],
+                'remaining_balance',
+                'balance_updated_at',
                 'created_at',
                 'updated_at',
             ],
@@ -83,6 +73,12 @@ test('can login with a new consumer id and scrape data', function () {
     $this->assertDatabaseHas('recharges', [
         'order_no' => '9305b99e4713041193023587246084682',
         'sale_name' => 'UVS_BoguraSD1',
+    ]);
+
+    $this->assertDatabaseHas('monthly_usages', [
+        'year' => 2026,
+        'month' => 'May',
+        'total_recharge' => 699.00,
     ]);
 });
 
@@ -244,11 +240,15 @@ test('can sync consumer data from nesco when authenticated', function () {
     Sanctum::actingAs($consumer);
 
     $responseHtml = file_get_contents(base_path('nesco_response.html'));
+    $consumptionHtml = '<html><tbody class="font_bill_summ"><tr><td>2026</td><td>May</td><td>699</td><td>-2.52</td><td>212.06</td><td>160</td><td>336</td><td>0</td><td>0</td><td>33.29</td><td>741.35</td><td>256.2</td><td>45.8</td></tr></tbody></html>';
 
     Http::fake([
-        'https://customer.nesco.gov.bd/*' => function ($request) use ($responseHtml) {
+        'https://customer.nesco.gov.bd/*' => function ($request) use ($responseHtml, $consumptionHtml) {
             if ($request->method() === 'GET') {
                 return Http::response('<meta name="csrf-token" content="mock-token">', 200);
+            }
+            if ($request->method() === 'POST' && ($request->data()['submit'] ?? '') === 'মাসিক ব্যবহার') {
+                return Http::response($consumptionHtml, 200);
             }
 
             return Http::response($responseHtml, 200);
@@ -263,6 +263,7 @@ test('can sync consumer data from nesco when authenticated', function () {
                 'id',
                 'consumer_id',
                 'customer_name',
+                'father_husband_name',
                 'address',
                 'mobile',
                 'billing_office',
@@ -274,7 +275,8 @@ test('can sync consumer data from nesco when authenticated', function () {
                 'meter_status',
                 'installation_date',
                 'min_recharge',
-                'recharges',
+                'remaining_balance',
+                'balance_updated_at',
             ],
         ])
         ->assertJsonFragment([
@@ -285,6 +287,13 @@ test('can sync consumer data from nesco when authenticated', function () {
     $this->assertDatabaseHas('consumer_ids', [
         'id' => $consumer->id,
         'customer_name' => 'Test',
+    ]);
+
+    $this->assertDatabaseHas('monthly_usages', [
+        'consumer_id_id' => $consumer->id,
+        'year' => 2026,
+        'month' => 'May',
+        'total_recharge' => 699.00,
     ]);
 });
 
@@ -352,4 +361,178 @@ test('check-token endpoint returns expired for an expired token', function () {
             'expired' => true,
             'message' => 'Token has expired.',
         ]);
+});
+
+test('can list recharges for a specific consumer when authenticated', function () {
+    $consumer = ConsumerId::factory()->create();
+    Sanctum::actingAs($consumer);
+
+    $target = ConsumerId::factory()->create();
+    Recharge::factory()->count(3)->create(['consumer_id_id' => $target->id]);
+
+    $response = $this->getJson("/api/consumer-ids/{$target->consumer_id}/recharges");
+
+    $response->assertSuccessful()
+        ->assertJsonCount(3, 'data')
+        ->assertJsonStructure([
+            'data' => [
+                '*' => [
+                    'id',
+                    'order_no',
+                    'token',
+                    'rent',
+                    'demand_charge',
+                    'pfc',
+                    'tax',
+                    'subsidy_amount',
+                    'purchase_amount',
+                    'total_amount',
+                    'purchase_energy',
+                    'sale_name',
+                    'purchase_date',
+                    'debt_amount',
+                    'paid_amount',
+                ],
+            ],
+        ]);
+});
+
+test('can list monthly usages for a specific consumer when authenticated', function () {
+    $consumer = ConsumerId::factory()->create();
+    Sanctum::actingAs($consumer);
+
+    $target = ConsumerId::factory()->create();
+    MonthlyUsage::factory()->count(2)->create(['consumer_id_id' => $target->id]);
+
+    $response = $this->getJson("/api/consumer-ids/{$target->consumer_id}/monthly-usages");
+
+    $response->assertSuccessful()
+        ->assertJsonCount(2, 'data')
+        ->assertJsonStructure([
+            'data' => [
+                '*' => [
+                    'id',
+                    'year',
+                    'month',
+                    'total_recharge',
+                    'rebate',
+                    'used_electricity_taka',
+                    'meter_rent',
+                    'demand_charge',
+                    'pfc_charge',
+                    'paid_arrear_penalty',
+                    'vat',
+                    'total_usage_deduction',
+                    'meter_balance',
+                    'used_electricity_kwh',
+                ],
+            ],
+        ]);
+});
+
+test('can list daily reports for a specific consumer when authenticated', function () {
+    $consumer = ConsumerId::factory()->create();
+    Sanctum::actingAs($consumer);
+
+    $target = ConsumerId::factory()->create();
+    DailyReport::factory()->count(3)->create(['consumer_id_id' => $target->id]);
+
+    $response = $this->getJson("/api/consumer-ids/{$target->consumer_id}/daily-reports");
+
+    $response->assertSuccessful()
+        ->assertJsonCount(3, 'data')
+        ->assertJsonStructure([
+            'data' => [
+                '*' => [
+                    'id',
+                    'consumer_id_id',
+                    'date',
+                    'remaining_balance',
+                    'recharge_amount',
+                    'usage_taka',
+                    'usage_kwh',
+                    'created_at',
+                    'updated_at',
+                ],
+            ],
+        ]);
+});
+
+test('can store and update a daily report manually and recalculate usage', function () {
+    $consumer = ConsumerId::factory()->create();
+    Sanctum::actingAs($consumer);
+
+    $target = ConsumerId::factory()->create();
+
+    // Create a recharge for testing calculations
+    Recharge::factory()->create([
+        'consumer_id_id' => $target->id,
+        'total_amount' => 500.00,
+        'purchase_date' => '12-JUN-2026 10:00 AM', // 2026-06-12
+    ]);
+
+    // Create a previous daily report snapshot on 2026-06-11
+    DailyReport::create([
+        'consumer_id_id' => $target->id,
+        'date' => '2026-06-11',
+        'remaining_balance' => 300.00,
+    ]);
+
+    // Store a new daily report snapshot on 2026-06-13
+    $response = $this->postJson("/api/consumer-ids/{$target->consumer_id}/daily-reports", [
+        'date' => '2026-06-13',
+        'remaining_balance' => 600.00,
+    ]);
+
+    // Calculation:
+    // prev balance = 300.00
+    // recharge on 12th = 500.00
+    // curr balance = 600.00
+    // usage = 300.00 + 500.00 - 600.00 = 200.00
+    $response->assertSuccessful()
+        ->assertJsonFragment([
+            'date' => '2026-06-13',
+            'remaining_balance' => 600.00,
+            'recharge_amount' => 500.00,
+            'usage_taka' => 200.00,
+        ]);
+
+    $this->assertDatabaseHas('daily_reports', [
+        'consumer_id_id' => $target->id,
+        'date' => '2026-06-13',
+        'remaining_balance' => 600.00,
+        'usage_taka' => 200.00,
+    ]);
+});
+
+test('the nesco:scrape command runs successfully and syncs consumer data', function () {
+    $consumer = ConsumerId::factory()->create(['consumer_id' => '12345678']);
+
+    $responseHtml = file_get_contents(base_path('nesco_response.html'));
+    $consumptionHtml = '<html><tbody class="font_bill_summ"><tr><td>2026</td><td>May</td><td>699</td><td>-2.52</td><td>212.06</td><td>160</td><td>336</td><td>0</td><td>0</td><td>33.29</td><td>741.35</td><td>256.2</td><td>45.8</td></tr></tbody></html>';
+
+    Http::fake([
+        'https://customer.nesco.gov.bd/*' => function ($request) use ($responseHtml, $consumptionHtml) {
+            if ($request->method() === 'GET') {
+                return Http::response('<meta name="csrf-token" content="mock-token">', 200);
+            }
+            if ($request->method() === 'POST' && ($request->data()['submit'] ?? '') === 'মাসিক ব্যবহার') {
+                return Http::response($consumptionHtml, 200);
+            }
+
+            return Http::response($responseHtml, 200);
+        },
+    ]);
+
+    $this->artisan('nesco:scrape')
+        ->expectsOutput('Starting NESCO scrape and sync for 1 consumer(s)...')
+        ->expectsOutput('Scraping consumer ID: 12345678...')
+        ->expectsOutput('Successfully synced consumer ID: 12345678')
+        ->expectsOutput('NESCO scrape and sync completed.')
+        ->assertExitCode(0);
+
+    $this->assertDatabaseHas('consumer_ids', [
+        'id' => $consumer->id,
+        'customer_name' => 'Test',
+    ]);
 });

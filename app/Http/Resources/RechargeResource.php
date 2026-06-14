@@ -16,6 +16,7 @@ class RechargeResource extends JsonResource
     {
         return [
             'id' => $this->id,
+            'consumer_id_id' => $this->consumer_id_id,
             'order_no' => $this->order_no,
             'token' => $this->token,
             'seq' => $this->seq,

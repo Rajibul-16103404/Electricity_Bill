@@ -3,7 +3,9 @@
 namespace App\Services;
 
 use App\Models\ConsumerId;
+use App\Models\DailyReport;
 use App\Models\Recharge;
+use Carbon\Carbon;
 use DOMDocument;
 use DOMXPath;
 use GuzzleHttp\Cookie\CookieJar;
@@ -45,19 +47,32 @@ class NescoScraperService
             }
 
             // 2. POST to fetch recharge history and profile data
-            $postResponse = $client->asForm()->post('https://customer.nesco.gov.bd/pre/panel', [
+            $rechargeResponse = $client->asForm()->post('https://customer.nesco.gov.bd/pre/panel', [
                 '_token' => $csrfToken,
                 'cust_no' => $consumerId->consumer_id,
                 'submit' => 'রিচার্জ হিস্ট্রি',
             ]);
 
-            if (! $postResponse->successful()) {
-                Log::error('NESCO POST request failed with status: '.$postResponse->status());
+            if (! $rechargeResponse->successful()) {
+                Log::error('NESCO Recharge POST request failed with status: '.$rechargeResponse->status());
 
                 return false;
             }
 
-            return $this->parseAndSave($consumerId, $postResponse->body());
+            // 3. POST to fetch monthly consumption data
+            $consumptionResponse = $client->asForm()->post('https://customer.nesco.gov.bd/pre/panel', [
+                '_token' => $csrfToken,
+                'cust_no' => $consumerId->consumer_id,
+                'submit' => 'মাসিক ব্যবহার',
+            ]);
+
+            if (! $consumptionResponse->successful()) {
+                Log::error('NESCO Consumption POST request failed with status: '.$consumptionResponse->status());
+
+                return false;
+            }
+
+            return $this->parseAndSave($consumerId, $rechargeResponse->body(), $consumptionResponse->body());
         } catch (\Exception $e) {
             Log::error('NESCO scraping exception: '.$e->getMessage(), [
                 'exception' => $e,
@@ -70,18 +85,25 @@ class NescoScraperService
     /**
      * Parse the response HTML and save results to DB.
      */
-    protected function parseAndSave(ConsumerId $consumerId, string $html): bool
+    protected function parseAndSave(ConsumerId $consumerId, string $rechargeHtml, ?string $consumptionHtml = null): bool
     {
         // Suppress warnings from invalid HTML structures parsed by DOMDocument
         $dom = new DOMDocument;
-        @$dom->loadHTML('<?xml encoding="UTF-8">'.$html);
+        @$dom->loadHTML('<?xml encoding="UTF-8">'.$rechargeHtml);
         $xpath = new DOMXPath($dom);
 
         // --- A. Parse Profile Details ---
         // Profile details are located in input elements within the bfont_post form inside #con_info_div
         // We can find them using XPath queries looking for input value attributes next to labels
+        $balanceTimeNodes = $xpath->query("//label[contains(normalize-space(.), 'অবশিষ্ট ব্যালেন্স')]//span");
+        $balanceUpdatedAt = null;
+        if ($balanceTimeNodes->length > 0) {
+            $balanceUpdatedAt = trim($balanceTimeNodes->item(0)->textContent);
+        }
+
         $profile = [
             'customer_name' => $this->getInputValueByLabel($xpath, 'গ্রাহকের নাম'),
+            'father_husband_name' => $this->getInputValueByLabel($xpath, 'পিতা/স্বামীর নাম'),
             'address' => $this->getInputValueByLabel($xpath, 'ঠিকানা'),
             'mobile' => $this->getInputValueByLabel($xpath, 'মোবাইল'),
             'billing_office' => $this->getInputValueByLabel($xpath, 'সংশ্লিষ্ট বিদ্যুৎ অফিস'),
@@ -93,6 +115,8 @@ class NescoScraperService
             'meter_status' => $this->getInputValueByLabel($xpath, 'মিটার স্ট্যাটাস'),
             'installation_date' => $this->getInputValueByLabel($xpath, 'মিটার স্থাপনের তারিখ'),
             'min_recharge' => $this->getInputValueByLabel($xpath, 'মিনিমাম রিচার্জের পরিমাণ (টাকা)'),
+            'remaining_balance' => (float) $this->getInputValueByLabel($xpath, 'অবশিষ্ট ব্যালেন্স (টাকা)'),
+            'balance_updated_at' => $balanceUpdatedAt,
         ];
 
         // --- B. Parse Recharges ---
@@ -125,8 +149,39 @@ class NescoScraperService
             ];
         }
 
-        // --- C. Update Database in a Transaction ---
-        DB::transaction(function () use ($consumerId, $profile, $rechargesData) {
+        // --- C. Parse Monthly Usages ---
+        $usagesData = [];
+        if ($consumptionHtml) {
+            $cDom = new DOMDocument;
+            @$cDom->loadHTML('<?xml encoding="UTF-8">'.$consumptionHtml);
+            $cXpath = new DOMXPath($cDom);
+
+            $usageElements = $cXpath->query("//tbody[contains(@class, 'font_bill_summ')]/tr");
+            foreach ($usageElements as $element) {
+                /** @var \DOMElement $element */
+                $tds = $element->getElementsByTagName('td');
+                if ($tds->length >= 13) {
+                    $usagesData[] = [
+                        'year' => (int) trim($tds->item(0)->textContent),
+                        'month' => trim($tds->item(1)->textContent),
+                        'total_recharge' => (float) trim($tds->item(2)->textContent),
+                        'rebate' => (float) trim($tds->item(3)->textContent),
+                        'used_electricity_taka' => (float) trim($tds->item(4)->textContent),
+                        'meter_rent' => (float) trim($tds->item(5)->textContent),
+                        'demand_charge' => (float) trim($tds->item(6)->textContent),
+                        'pfc_charge' => (float) trim($tds->item(7)->textContent),
+                        'paid_arrear_penalty' => (float) trim($tds->item(8)->textContent),
+                        'vat' => (float) trim($tds->item(9)->textContent),
+                        'total_usage_deduction' => (float) trim($tds->item(10)->textContent),
+                        'meter_balance' => (float) trim($tds->item(11)->textContent),
+                        'used_electricity_kwh' => (float) trim($tds->item(12)->textContent),
+                    ];
+                }
+            }
+        }
+
+        // --- D. Update Database in a Transaction ---
+        DB::transaction(function () use ($consumerId, $profile, $rechargesData, $usagesData) {
             // Update profile info on the ConsumerId model
             $consumerId->update($profile);
 
@@ -136,6 +191,39 @@ class NescoScraperService
             foreach ($rechargesData as $recharge) {
                 $consumerId->recharges()->create($recharge);
             }
+
+            // Replaces all existing monthly usages for this consumer
+            $consumerId->monthlyUsages()->delete();
+
+            foreach ($usagesData as $usage) {
+                $consumerId->monthlyUsages()->create($usage);
+            }
+
+            // Create/update daily report snapshot for today's sync date
+            $dateString = null;
+            if (! empty($profile['balance_updated_at'])) {
+                try {
+                    $dateString = Carbon::parse($profile['balance_updated_at'])->toDateString();
+                } catch (\Exception $e) {
+                    // Ignore parsing errors
+                }
+            }
+            if (! $dateString) {
+                $dateString = Carbon::today()->toDateString();
+            }
+
+            DailyReport::updateOrCreate(
+                [
+                    'consumer_id_id' => $consumerId->id,
+                    'date' => $dateString,
+                ],
+                [
+                    'remaining_balance' => $profile['remaining_balance'] ?? 0,
+                ]
+            );
+
+            // Run full recalculation for daily reports
+            app(DailyReportService::class)->recalculateAll($consumerId);
         });
 
         return true;
@@ -143,8 +231,9 @@ class NescoScraperService
 
     protected function getInputValueByLabel(DOMXPath $xpath, string $labelText): ?string
     {
-        // Find label exactly matching target text, then lookup the sibling or sibling's sibling input
-        $query = "//label[normalize-space(text())='{$labelText}']/following-sibling::div//input | //label[normalize-space(text())='{$labelText}']/following::input[1]";
+        // Find label starting with target text (which handles labels with child nodes like spans/small),
+        // then lookup the sibling or sibling's sibling input
+        $query = "//label[starts-with(normalize-space(.), '{$labelText}')]/following-sibling::div//input | //label[starts-with(normalize-space(.), '{$labelText}')]/following::input[1]";
         $nodes = $xpath->query($query);
 
         if ($nodes->length > 0) {
