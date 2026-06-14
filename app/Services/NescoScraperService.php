@@ -15,14 +15,11 @@ class NescoScraperService
 {
     /**
      * Scrap data from NESCO portal for a given ConsumerId model and update the database.
-     *
-     * @param  \App\Models\ConsumerId  $consumerId
-     * @return bool
      */
     public function scrapeAndSync(ConsumerId $consumerId): bool
     {
         try {
-            $cookies = new CookieJar();
+            $cookies = new CookieJar;
             $client = Http::withOptions([
                 'cookies' => $cookies,
                 'verify' => false,
@@ -32,7 +29,8 @@ class NescoScraperService
             // 1. GET page to populate session cookies and find CSRF token
             $response = $client->get('https://customer.nesco.gov.bd/pre/panel');
             if (! $response->successful()) {
-                Log::error("NESCO GET Request failed with status: " . $response->status());
+                Log::error('NESCO GET Request failed with status: '.$response->status());
+
                 return false;
             }
 
@@ -41,7 +39,8 @@ class NescoScraperService
             $csrfToken = $matches[1] ?? null;
 
             if (! $csrfToken) {
-                Log::error("NESCO CSRF Token not found in initial page load");
+                Log::error('NESCO CSRF Token not found in initial page load');
+
                 return false;
             }
 
@@ -53,31 +52,29 @@ class NescoScraperService
             ]);
 
             if (! $postResponse->successful()) {
-                Log::error("NESCO POST request failed with status: " . $postResponse->status());
+                Log::error('NESCO POST request failed with status: '.$postResponse->status());
+
                 return false;
             }
 
             return $this->parseAndSave($consumerId, $postResponse->body());
         } catch (\Exception $e) {
-            Log::error("NESCO scraping exception: " . $e->getMessage(), [
+            Log::error('NESCO scraping exception: '.$e->getMessage(), [
                 'exception' => $e,
             ]);
+
             return false;
         }
     }
 
     /**
      * Parse the response HTML and save results to DB.
-     *
-     * @param  \App\Models\ConsumerId  $consumerId
-     * @param  string  $html
-     * @return bool
      */
     protected function parseAndSave(ConsumerId $consumerId, string $html): bool
     {
         // Suppress warnings from invalid HTML structures parsed by DOMDocument
-        $dom = new DOMDocument();
-        @$dom->loadHTML('<?xml encoding="UTF-8">' . $html);
+        $dom = new DOMDocument;
+        @$dom->loadHTML('<?xml encoding="UTF-8">'.$html);
         $xpath = new DOMXPath($dom);
 
         // --- A. Parse Profile Details ---
@@ -135,7 +132,7 @@ class NescoScraperService
 
             // Replaces all existing recharges for this consumer
             $consumerId->recharges()->delete();
-            
+
             foreach ($rechargesData as $recharge) {
                 $consumerId->recharges()->create($recharge);
             }
@@ -144,18 +141,16 @@ class NescoScraperService
         return true;
     }
 
-    /**
-     * Helper method to search input fields associated with specific label texts.
-     */
     protected function getInputValueByLabel(DOMXPath $xpath, string $labelText): ?string
     {
-        // Find label containing target text, then lookup the sibling or sibling's sibling input
-        $query = "//label[contains(text(), '{$labelText}')]/following-sibling::div//input | //label[contains(text(), '{$labelText}')]/following::input[1]";
+        // Find label exactly matching target text, then lookup the sibling or sibling's sibling input
+        $query = "//label[normalize-space(text())='{$labelText}']/following-sibling::div//input | //label[normalize-space(text())='{$labelText}']/following::input[1]";
         $nodes = $xpath->query($query);
-        
+
         if ($nodes->length > 0) {
             /** @var \DOMElement $inputNode */
             $inputNode = $nodes->item(0);
+
             return trim($inputNode->getAttribute('value'));
         }
 

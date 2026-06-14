@@ -33,10 +33,18 @@ class ConsumerId extends Authenticatable
     /**
      * Get the recharges for the consumer.
      *
-     * @return \Illuminate\Database\Eloquent\Relations\HasMany<Recharge>
+     * @return HasMany<Recharge>
      */
     public function recharges(): HasMany
     {
         return $this->hasMany(Recharge::class, 'consumer_id_id');
+    }
+
+    /**
+     * Get the route key for the model.
+     */
+    public function getRouteKeyName(): string
+    {
+        return 'consumer_id';
     }
 }

@@ -9,14 +9,15 @@ uses(LazilyRefreshDatabase::class);
 
 test('can login with a new consumer id and scrape data', function () {
     $responseHtml = file_get_contents(base_path('nesco_response.html'));
-    
+
     Http::fake([
         'https://customer.nesco.gov.bd/*' => function ($request) use ($responseHtml) {
             if ($request->method() === 'GET') {
                 return Http::response('<meta name="csrf-token" content="mock-token">', 200);
             }
+
             return Http::response($responseHtml, 200);
-        }
+        },
     ]);
 
     $data = [
@@ -61,7 +62,7 @@ test('can login with a new consumer id and scrape data', function () {
                         'purchase_date',
                         'debt_amount',
                         'paid_amount',
-                    ]
+                    ],
                 ],
                 'created_at',
                 'updated_at',
@@ -91,8 +92,9 @@ test('can login with an existing consumer id without creating a duplicate and ge
             if ($request->method() === 'GET') {
                 return Http::response('<meta name="csrf-token" content="mock-token">', 200);
             }
+
             return Http::response('<html></html>', 200);
-        }
+        },
     ]);
 
     $consumer = ConsumerId::factory()->create(['consumer_id' => '98765432']);
@@ -152,8 +154,9 @@ test('can store a new consumer id when authenticated', function () {
             if ($request->method() === 'GET') {
                 return Http::response('<meta name="csrf-token" content="mock-token">', 200);
             }
+
             return Http::response('<html></html>', 200);
-        }
+        },
     ]);
 
     $consumer = ConsumerId::factory()->create();
@@ -200,7 +203,7 @@ test('can show a specific consumer id when authenticated', function () {
 
     $target = ConsumerId::factory()->create(['consumer_id' => '98765432']);
 
-    $response = $this->getJson("/api/consumer-ids/{$target->id}");
+    $response = $this->getJson("/api/consumer-ids/{$target->consumer_id}");
 
     $response->assertSuccessful()
         ->assertJsonStructure([
@@ -227,7 +230,7 @@ test('can delete a consumer id when authenticated', function () {
 
     $target = ConsumerId::factory()->create();
 
-    $response = $this->deleteJson("/api/consumer-ids/{$target->id}");
+    $response = $this->deleteJson("/api/consumer-ids/{$target->consumer_id}");
 
     $response->assertNoContent();
 
@@ -241,17 +244,18 @@ test('can sync consumer data from nesco when authenticated', function () {
     Sanctum::actingAs($consumer);
 
     $responseHtml = file_get_contents(base_path('nesco_response.html'));
-    
+
     Http::fake([
         'https://customer.nesco.gov.bd/*' => function ($request) use ($responseHtml) {
             if ($request->method() === 'GET') {
                 return Http::response('<meta name="csrf-token" content="mock-token">', 200);
             }
+
             return Http::response($responseHtml, 200);
-        }
+        },
     ]);
 
-    $response = $this->postJson("/api/consumer-ids/{$consumer->id}/sync");
+    $response = $this->postJson("/api/consumer-ids/{$consumer->consumer_id}/sync");
 
     $response->assertSuccessful()
         ->assertJsonStructure([
@@ -271,7 +275,7 @@ test('can sync consumer data from nesco when authenticated', function () {
                 'installation_date',
                 'min_recharge',
                 'recharges',
-            ]
+            ],
         ])
         ->assertJsonFragment([
             'consumer_id' => '12345678',
