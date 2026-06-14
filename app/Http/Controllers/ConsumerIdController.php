@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Http\Requests\CheckTokenRequest;
 use App\Http\Requests\LoginRequest;
 use App\Http\Requests\StoreConsumerIdRequest;
 use App\Http\Resources\ConsumerIdResource;
@@ -10,6 +11,7 @@ use App\Services\NescoScraperService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
 use Illuminate\Http\Response;
+use Laravel\Sanctum\PersonalAccessToken;
 
 class ConsumerIdController extends Controller
 {
@@ -87,5 +89,47 @@ class ConsumerIdController extends Controller
         $this->scraperService->scrapeAndSync($consumerId);
 
         return new ConsumerIdResource($consumerId->load('recharges'));
+    }
+
+    /**
+     * Check if a token is expired or not.
+     */
+    public function checkToken(CheckTokenRequest $request): JsonResponse
+    {
+        $token = $request->validated('token') ?? $request->bearerToken();
+
+        $accessToken = PersonalAccessToken::findToken($token);
+
+        if (! $accessToken) {
+            return response()->json([
+                'valid' => false,
+                'expired' => null,
+                'message' => 'Token not found or invalid.',
+            ]);
+        }
+
+        $expiration = config('sanctum.expiration');
+
+        $isExpired = false;
+        if ($accessToken->expires_at && $accessToken->expires_at->isPast()) {
+            $isExpired = true;
+        } elseif ($expiration && $accessToken->created_at->addMinutes($expiration)->isPast()) {
+            $isExpired = true;
+        }
+
+        if ($isExpired) {
+            return response()->json([
+                'valid' => false,
+                'expired' => true,
+                'message' => 'Token has expired.',
+            ]);
+        }
+
+        return response()->json([
+            'valid' => true,
+            'expired' => false,
+            'message' => 'Token is valid.',
+            'expires_at' => $accessToken->expires_at ? $accessToken->expires_at->toIso8601String() : null,
+        ]);
     }
 }

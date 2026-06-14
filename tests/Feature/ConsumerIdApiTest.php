@@ -287,3 +287,69 @@ test('can sync consumer data from nesco when authenticated', function () {
         'customer_name' => 'Test',
     ]);
 });
+
+test('check-token endpoint validation error when no token provided', function () {
+    $response = $this->postJson('/api/check-token', []);
+
+    $response->assertStatus(422)
+        ->assertJsonValidationErrors(['token']);
+});
+
+test('check-token endpoint returns invalid for a non-existent token', function () {
+    $response = $this->postJson('/api/check-token', ['token' => 'invalid-token']);
+
+    $response->assertSuccessful()
+        ->assertJson([
+            'valid' => false,
+            'expired' => null,
+            'message' => 'Token not found or invalid.',
+        ]);
+});
+
+test('check-token endpoint returns valid for a valid token via payload', function () {
+    $consumer = ConsumerId::factory()->create();
+    $tokenResult = $consumer->createToken('test_token');
+
+    $response = $this->postJson('/api/check-token', ['token' => $tokenResult->plainTextToken]);
+
+    $response->assertSuccessful()
+        ->assertJson([
+            'valid' => true,
+            'expired' => false,
+            'message' => 'Token is valid.',
+        ]);
+});
+
+test('check-token endpoint returns valid for a valid token via header', function () {
+    $consumer = ConsumerId::factory()->create();
+    $tokenResult = $consumer->createToken('test_token');
+
+    $response = $this->withToken($tokenResult->plainTextToken)
+        ->postJson('/api/check-token');
+
+    $response->assertSuccessful()
+        ->assertJson([
+            'valid' => true,
+            'expired' => false,
+            'message' => 'Token is valid.',
+        ]);
+});
+
+test('check-token endpoint returns expired for an expired token', function () {
+    $consumer = ConsumerId::factory()->create();
+    $tokenResult = $consumer->createToken('test_token');
+
+    // Manually expire the token in database
+    $tokenResult->accessToken->update([
+        'expires_at' => now()->subMinutes(10),
+    ]);
+
+    $response = $this->postJson('/api/check-token', ['token' => $tokenResult->plainTextToken]);
+
+    $response->assertSuccessful()
+        ->assertJson([
+            'valid' => false,
+            'expired' => true,
+            'message' => 'Token has expired.',
+        ]);
+});
