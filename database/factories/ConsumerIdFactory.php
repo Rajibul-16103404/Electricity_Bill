@@ -15,7 +15,10 @@ class ConsumerIdFactory extends Factory
      *
      * @return array<string, mixed>
      */
+    public function definition(): array
+    {
         return [
             'consumer_id' => $this->faker->unique()->numerify('##########'),
         ];
+    }
 }
