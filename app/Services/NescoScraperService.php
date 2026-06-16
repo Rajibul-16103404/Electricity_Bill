@@ -184,6 +184,7 @@ class NescoScraperService
         DB::transaction(function () use ($consumerId, $profile, $rechargesData, $usagesData) {
             // Update profile info on the ConsumerId model
             $consumerId->update($profile);
+            $consumerId->touch();
 
             // Replaces all existing recharges for this consumer
             $consumerId->recharges()->delete();

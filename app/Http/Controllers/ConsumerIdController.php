@@ -46,7 +46,7 @@ class ConsumerIdController extends Controller
         // Attempt to scrape details from NESCO
         $this->scraperService->scrapeAndSync($consumerId);
 
-        return new ConsumerIdResource($consumerId);
+        return new ConsumerIdResource($consumerId->refresh());
     }
 
     /**
@@ -54,6 +54,11 @@ class ConsumerIdController extends Controller
      */
     public function show(ConsumerId $consumerId): ConsumerIdResource
     {
+        if (! $consumerId->updated_at || ! $consumerId->updated_at->isToday()) {
+            $this->scraperService->scrapeAndSync($consumerId);
+            $consumerId->refresh();
+        }
+
         return new ConsumerIdResource($consumerId);
     }
 
@@ -83,7 +88,7 @@ class ConsumerIdController extends Controller
 
         return response()->json([
             'token' => $token,
-            'consumer' => new ConsumerIdResource($consumerId),
+            'consumer' => new ConsumerIdResource($consumerId->refresh()),
         ]);
     }
 
@@ -94,7 +99,7 @@ class ConsumerIdController extends Controller
     {
         $this->scraperService->scrapeAndSync($consumerId);
 
-        return new ConsumerIdResource($consumerId);
+        return new ConsumerIdResource($consumerId->refresh());
     }
 
     /**
@@ -144,6 +149,10 @@ class ConsumerIdController extends Controller
      */
     public function recharges(ConsumerId $consumerId): AnonymousResourceCollection
     {
+        if (! $consumerId->updated_at || ! $consumerId->updated_at->isToday()) {
+            $this->scraperService->scrapeAndSync($consumerId);
+        }
+
         return RechargeResource::collection($consumerId->recharges()->orderBy('id', 'asc')->get());
     }
 
@@ -152,6 +161,10 @@ class ConsumerIdController extends Controller
      */
     public function monthlyUsages(ConsumerId $consumerId): AnonymousResourceCollection
     {
+        if (! $consumerId->updated_at || ! $consumerId->updated_at->isToday()) {
+            $this->scraperService->scrapeAndSync($consumerId);
+        }
+
         return MonthlyUsageResource::collection($consumerId->monthlyUsages()->orderBy('id', 'asc')->get());
     }
 
@@ -160,6 +173,10 @@ class ConsumerIdController extends Controller
      */
     public function dailyReports(ConsumerId $consumerId): AnonymousResourceCollection
     {
+        if (! $consumerId->updated_at || ! $consumerId->updated_at->isToday()) {
+            $this->scraperService->scrapeAndSync($consumerId);
+        }
+
         return DailyReportResource::collection($consumerId->dailyReports()->orderBy('date', 'desc')->get());
     }
 

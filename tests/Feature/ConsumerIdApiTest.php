@@ -4,6 +4,7 @@ use App\Models\ConsumerId;
 use App\Models\DailyReport;
 use App\Models\MonthlyUsage;
 use App\Models\Recharge;
+use Carbon\Carbon;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
 use Illuminate\Support\Facades\Http;
 use Laravel\Sanctum\Sanctum;
@@ -535,4 +536,131 @@ test('the nesco:scrape command runs successfully and syncs consumer data', funct
         'id' => $consumer->id,
         'customer_name' => 'Test',
     ]);
+});
+
+test('on-demand endpoints trigger scraping if data was not updated today', function () {
+    $consumer = ConsumerId::factory()->create([
+        'consumer_id' => '12345678',
+        'updated_at' => now()->subDay(),
+    ]);
+    Sanctum::actingAs($consumer);
+
+    $responseHtml = file_get_contents(base_path('nesco_response.html'));
+    $consumptionHtml = '<html><tbody class="font_bill_summ"><tr><td>2026</td><td>May</td><td>699</td><td>-2.52</td><td>212.06</td><td>160</td><td>336</td><td>0</td><td>0</td><td>33.29</td><td>741.35</td><td>256.2</td><td>45.8</td></tr></tbody></html>';
+
+    Http::fake([
+        'https://customer.nesco.gov.bd/*' => function ($request) use ($responseHtml, $consumptionHtml) {
+            if ($request->method() === 'GET') {
+                return Http::response('<meta name="csrf-token" content="mock-token">', 200);
+            }
+            if ($request->method() === 'POST' && ($request->data()['submit'] ?? '') === 'মাসিক ব্যবহার') {
+                return Http::response($consumptionHtml, 200);
+            }
+
+            return Http::response($responseHtml, 200);
+        },
+    ]);
+
+    // Let's test show endpoint
+    $response = $this->getJson("/api/consumer-ids/{$consumer->consumer_id}");
+    $response->assertSuccessful();
+
+    // Verify HTTP fake was hit (scraper was called)
+    Http::assertSent(function ($request) {
+        return str_contains($request->url(), 'customer.nesco.gov.bd');
+    });
+
+    // Reset Http fakes
+    $responseHtml = file_get_contents(base_path('nesco_response.html'));
+    $consumptionHtml = '<html><tbody class="font_bill_summ"><tr><td>2026</td><td>May</td><td>699</td><td>-2.52</td><td>212.06</td><td>160</td><td>336</td><td>0</td><td>0</td><td>33.29</td><td>741.35</td><td>256.2</td><td>45.8</td></tr></tbody></html>';
+    Http::fake([
+        'https://customer.nesco.gov.bd/*' => function ($request) use ($responseHtml, $consumptionHtml) {
+            if ($request->method() === 'GET') {
+                return Http::response('<meta name="csrf-token" content="mock-token">', 200);
+            }
+            if ($request->method() === 'POST' && ($request->data()['submit'] ?? '') === 'মাসিক ব্যবহার') {
+                return Http::response($consumptionHtml, 200);
+            }
+
+            return Http::response($responseHtml, 200);
+        },
+    ]);
+
+    // Set updated_at to yesterday again to test recharges endpoint
+    $consumer->timestamps = false;
+    $consumer->updated_at = now()->subDay();
+    $consumer->save();
+    $response = $this->getJson("/api/consumer-ids/{$consumer->consumer_id}/recharges");
+    $response->assertSuccessful();
+
+    Http::assertSent(function ($request) {
+        return str_contains($request->url(), 'customer.nesco.gov.bd');
+    });
+});
+
+test('on-demand endpoints do not trigger scraping if data was updated today', function () {
+    $consumer = ConsumerId::factory()->create([
+        'consumer_id' => '12345678',
+        'updated_at' => now(), // updated today
+    ]);
+    Sanctum::actingAs($consumer);
+
+    Http::fake();
+
+    $response = $this->getJson("/api/consumer-ids/{$consumer->consumer_id}");
+    $response->assertSuccessful();
+
+    // Verify HTTP fake was NOT hit (scraper was not called)
+    Http::assertNothingSent();
+});
+
+test('on-demand scrape updates updated_at even if profile data is identical, and stops subsequent scrape', function () {
+    $consumer = ConsumerId::factory()->create([
+        'consumer_id' => '12345678',
+        'customer_name' => 'Test',
+        'address' => 'Test Rajshahi',
+        'meter_no' => '31013005538',
+    ]);
+    $consumer->timestamps = false;
+    $consumer->updated_at = now()->subDay();
+    $consumer->save();
+    Sanctum::actingAs($consumer);
+
+    $responseHtml = file_get_contents(base_path('nesco_response.html'));
+    $consumptionHtml = '<html><tbody class="font_bill_summ"><tr><td>2026</td><td>May</td><td>699</td><td>-2.52</td><td>212.06</td><td>160</td><td>336</td><td>0</td><td>0</td><td>33.29</td><td>741.35</td><td>256.2</td><td>45.8</td></tr></tbody></html>';
+
+    Http::fake([
+        'https://customer.nesco.gov.bd/*' => function ($request) use ($responseHtml, $consumptionHtml) {
+            if ($request->method() === 'GET') {
+                return Http::response('<meta name="csrf-token" content="mock-token">', 200);
+            }
+            if ($request->method() === 'POST' && ($request->data()['submit'] ?? '') === 'মাসিক ব্যবহার') {
+                return Http::response($consumptionHtml, 200);
+            }
+
+            return Http::response($responseHtml, 200);
+        },
+    ]);
+
+    // First request: updated_at is yesterday, so it should trigger scraper
+    $response = $this->getJson("/api/consumer-ids/{$consumer->consumer_id}");
+    $response->assertSuccessful();
+
+    // Verify HTTP fake was hit (scraper was called)
+    Http::assertSent(function ($request) {
+        return str_contains($request->url(), 'customer.nesco.gov.bd');
+    });
+
+    // Verify updated_at is now today in the database
+    $consumer->refresh();
+    expect(Carbon::parse($consumer->updated_at)->isToday())->toBeTrue();
+
+    // Reset HTTP fake records
+    Http::fake();
+
+    // Second request: updated_at is now today, so it should NOT trigger scraper
+    $response = $this->getJson("/api/consumer-ids/{$consumer->consumer_id}");
+    $response->assertSuccessful();
+
+    Http::assertNothingSent();
 });
